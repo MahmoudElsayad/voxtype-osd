@@ -24,8 +24,8 @@ enum Anchor {
         ) == .success, let value = bounds, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
 
         var rect = CGRect.zero
-        guard AXValueGetValue(value as! AXValue, .cgRect, &rect), rect != .zero else { return nil }
-        return flip(rect)
+        guard AXValueGetValue(value as! AXValue, .cgRect, &rect) else { return nil }
+        return caretRect(from: rect, primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
     }
 
     private static func attribute<T>(_ element: AXUIElement, _ name: String) -> T? {
@@ -35,9 +35,13 @@ enum Anchor {
     }
 
     /// Accessibility uses a top-left origin on the primary screen; AppKit uses bottom-left.
-    private static func flip(_ rect: CGRect) -> NSRect {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        return NSRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+    static func caretRect(from rect: CGRect, primaryHeight: CGFloat) -> NSRect? {
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite,
+              rect.size.width.isFinite, rect.size.height.isFinite,
+              rect.size.width >= 0, rect.size.height > 0 else { return nil }
+        let y = primaryHeight - rect.maxY
+        guard y.isFinite else { return nil }
+        return NSRect(x: rect.minX, y: y, width: rect.width, height: rect.height)
     }
 
     /// The panel origin: below the anchor, or above it when there is no room, kept on screen.

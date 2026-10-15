@@ -3,6 +3,37 @@ import AppKit
 let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 
+func testCaretAnchor() {
+    precondition(Anchor.caretRect(from: CGRect(x: 0, y: 1117, width: 0, height: 0),
+                                 primaryHeight: 1117) == nil,
+                 "BB's empty caret bounds must fall back to the pointer")
+    precondition(Anchor.caretRect(from: .zero, primaryHeight: 1117) == nil)
+    precondition(Anchor.caretRect(from: CGRect(x: 814, y: 642, width: 0, height: 20),
+                                 primaryHeight: 1117) == NSRect(x: 814, y: 455, width: 0, height: 20),
+                 "A zero-width insertion caret remains a valid anchor")
+    precondition(Anchor.caretRect(from: CGRect(x: -800, y: -200, width: 4, height: 20),
+                                 primaryHeight: 1117) == NSRect(x: -800, y: 1297, width: 4, height: 20),
+                 "Caret coordinates on other displays can be negative")
+    for rect in [CGRect(x: 20, y: 20, width: -1, height: 20),
+                 CGRect(x: 20, y: 20, width: 1, height: -20)] {
+        precondition(Anchor.caretRect(from: rect, primaryHeight: 1117) == nil,
+                     "Negative caret dimensions are invalid")
+    }
+    for invalid in [CGFloat.nan, .infinity, -.infinity] {
+        for rect in [CGRect(x: invalid, y: 20, width: 0, height: 20),
+                     CGRect(x: 20, y: invalid, width: 0, height: 20),
+                     CGRect(x: 20, y: 20, width: invalid, height: 20),
+                     CGRect(x: 20, y: 20, width: 0, height: invalid)] {
+            precondition(Anchor.caretRect(from: rect, primaryHeight: 1117) == nil,
+                         "Nonfinite caret bounds are invalid")
+        }
+    }
+    precondition(Anchor.caretRect(from: CGRect(x: 20, y: 20, width: 0, height: 20),
+                                 primaryHeight: .infinity) == nil)
+    print("Caret anchors and pointer fallback passed")
+}
+testCaretAnchor()
+
 func testRecordingCancellation() {
     func flags(_ raw: UInt) -> NSEvent {
         NSEvent.keyEvent(with: .flagsChanged, location: .zero,
