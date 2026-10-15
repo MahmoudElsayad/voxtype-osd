@@ -52,6 +52,7 @@ To update later, run `git pull` and then `./install.sh`.
 | Right Option and right Command together, in either order | Hands-free. The pop-up shows `HANDS-FREE`. |
 | Tap right Command during hands-free | Stops and transcribes. |
 | Right Command and Escape | Cancels the recording. |
+| Escape during hands-free | Cancels the recording. |
 | Escape while the pop-up shows `TRANSCRIBING` | Cancels the transcription. |
 
 ![Hands-free recording](docs/images/overlay-hands-free.png)
@@ -60,7 +61,7 @@ You can change the three keys in Settings.
 
 The rules protect a long recording, so only a deliberate action stops or discards it:
 
-- During hands-free, Escape alone does nothing, because you press it all the time while you work.
+- During hands-free, Escape cancels the recording immediately.
 - During hands-free, a key pressed while right Command is down makes a shortcut, for example right Command and Tab. VoxtypeOSD keeps recording.
 - A key pressed within 1 second of right Command also makes a shortcut, for example right Command and C. VoxtypeOSD discards that short recording.
 - If you press another key after that first second, the recording continues.

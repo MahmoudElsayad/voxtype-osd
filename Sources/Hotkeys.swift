@@ -9,9 +9,7 @@ import AppKit
 /// - The hands-free key with the push-to-talk key, in either order: recording continues after
 ///   the keys are released. A clean tap of the push-to-talk key stops and transcribes; a tap
 ///   that includes another key was a shortcut, and recording continues.
-/// - Cancel: the cancel key while holding push-to-talk, or alone while Voxtype transcribes.
-///   Alone during hands-free it does nothing, because Escape is pressed all the time while
-///   navigating.
+/// - Cancel: the cancel key during recording or while Voxtype transcribes.
 /// - Another key within the first second of holding push-to-talk was a shortcut such as
 ///   Command-C, so the short recording it started is discarded. Later keys are ignored.
 /// - A recording this app did not start, for example one running when the app relaunched,
@@ -167,7 +165,10 @@ final class Hotkeys {
         case .idle:
             if isCancel, daemonState() == "transcribing" { run("cancel") }
         case .handsFree:
-            break
+            if isCancel {
+                run("cancel")
+                mode = .idle
+            }
         }
     }
 }
