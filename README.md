@@ -6,6 +6,7 @@ VoxtypeOSD adds what the macOS version lacks:
 
 - A floating pop-up at the text caret with a live microphone level meter.
 - Push-to-talk and hands-free recording on keys you choose.
+- Automatic pause and resume for music and video through macOS Now Playing.
 - A history of your transcriptions in the menu bar, ready to copy again.
 - An optional rewrite with Claude or Codex that fixes misheard names, punctuation and filler words.
 
@@ -32,7 +33,7 @@ cd voxtype-osd
 
 1. It installs Voxtype with Homebrew.
 2. It downloads the `large-v3-turbo` speech model. Set `VOXTYPE_MODEL` to choose another model, for example `VOXTYPE_MODEL=large-v3 ./setup.sh`.
-3. It builds VoxtypeOSD, installs it in `~/Applications`, and adds it to Login Items.
+3. It installs `media-control`, builds VoxtypeOSD, installs it in `~/Applications`, and adds it to Login Items.
 4. It sets the Voxtype options that VoxtypeOSD needs, and keeps a copy of your previous `config.toml`.
 5. It installs `Voxtype.app` and adds it to Login Items.
 
@@ -75,6 +76,25 @@ When a recording is cancelled, the pop-up turns red for about a second.
 Voxtype stops a recording after `max_duration_secs`.
 Voxtype has no setting for unlimited, and 0 stops a recording at once.
 For this reason, `setup.sh` sets 86400 seconds (24 hours).
+
+## Music during recording
+
+VoxtypeOSD pauses the current macOS Now Playing session when recording starts.
+This includes browser playback such as YouTube when the browser exposes it to macOS.
+The app resumes playback after recording stops or you cancel it.
+For Bluetooth output, it waits up to about five seconds for the output rate to return to music quality.
+It resumes only the same player and item that it paused.
+Playback that was already paused stays paused.
+If you change the player or item during recording, the app leaves playback alone.
+
+`install.sh` installs [media-control](https://github.com/ungive/media-control) through Homebrew.
+The helper reads and controls macOS Now Playing without browser automation permissions.
+If the helper or player is unavailable, dictation continues without playback control.
+
+A Bluetooth headset microphone can reduce playback quality while it records.
+Pausing music does not change that Bluetooth behavior.
+Select the built-in microphone in System Settings > Sound > Input to keep the headset available for higher-quality playback.
+VoxtypeOSD does not change your audio devices.
 
 ## History
 

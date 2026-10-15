@@ -40,6 +40,7 @@ final class OverlayController: NSObject, NSApplicationDelegate {
     private var historyPanel: HistoryPanel?
     private var pendingHide: DispatchWorkItem?
     private let hotkeys = Hotkeys()
+    private let recordingMedia = RecordingMedia()
     /// Set when the keys turned out to be a shortcut, so that cancel is not shown in red.
     private var quietCancel = false
     private var recordingStarted = Date()
@@ -68,6 +69,10 @@ final class OverlayController: NSObject, NSApplicationDelegate {
         Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.tick() }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        recordingMedia.restoreOnQuit()
+    }
+
     private func tick() {
         var cancelled = false
         for event in logWatch.poll() {
@@ -91,6 +96,7 @@ final class OverlayController: NSObject, NSApplicationDelegate {
         let changed = state != daemonState
         if daemonState == .recording, state != .recording { hotkeys.daemonLeftRecording() }
         if daemonState != .recording, state == .recording { hotkeys.adoptRunningRecording() }
+        if changed { recordingMedia.setRecording(state == .recording) }
         daemonState = state
 
 
