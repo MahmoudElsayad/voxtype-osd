@@ -1,0 +1,214 @@
+import AppKit
+
+/// The Settings page of the menu bar panel: the three keys and the rewrite word list.
+/// Every change is saved at once; the panel redraws after a key change.
+final class SettingsCard: NSView, NSTextViewDelegate {
+    private static let padding: CGFloat = 16
+    private let store: SettingsStore
+    private let onChange: () -> Void
+
+    override var isFlipped: Bool { true }
+
+    init(store: SettingsStore, width: CGFloat, onDone: @escaping () -> Void, onChange: @escaping () -> Void) {
+        self.store = store
+        self.onChange = onChange
+        super.init(frame: .zero)
+        styleAsCard(self)
+
+        let settings = store.settings
+        let headerHeight: CGFloat = 40
+        let title = themedLabel("SETTINGS", font: Theme.label, color: Theme.textMuted, kern: 0.88)
+        title.frame.origin = NSPoint(x: Self.padding, y: (headerHeight - title.frame.height) / 2)
+        addSubview(title)
+        let done = textButton("DONE", action: onDone)
+        done.frame.origin = NSPoint(x: width - Self.padding - done.frame.width, y: (headerHeight - done.frame.height) / 2)
+        addSubview(done)
+        var y = divider(at: headerHeight, width: width, inset: 0)
+
+        y = keyRow(at: y, width: width, title: "PUSH-TO-TALK", caption: "Hold to talk",
+                   value: settings.pushToTalk.title,
+                   choices: TriggerKey.allCases.map { key in (key.title, key == settings.pushToTalk, { [weak self] in
+                       self?.update { settings in
+                           if settings.handsFree == key { settings.handsFree = settings.pushToTalk }
+                           settings.pushToTalk = key
+                       }
+                   }) })
+        y = divider(at: y, width: width, inset: Self.padding)
+        y = keyRow(at: y, width: width, title: "HANDS-FREE", caption: "Press with push-to-talk",
+                   value: settings.handsFree.title,
+                   choices: TriggerKey.allCases.filter { $0 != settings.pushToTalk }.map { key in
+                       (key.title, key == settings.handsFree, { [weak self] in self?.update { $0.handsFree = key } })
+                   })
+        y = divider(at: y, width: width, inset: Self.padding)
+        y = keyRow(at: y, width: width, title: "CANCEL", caption: "Discard the current run",
+                   value: settings.cancel.title,
+                   choices: CancelKey.allCases.map { key in
+                       (key.title, key == settings.cancel, { [weak self] in self?.update { $0.cancel = key } })
+                   })
+        y = divider(at: y, width: width, inset: 0)
+
+        let wordsTitle = themedLabel("REWRITE WORDS", font: Theme.label, color: Theme.textMuted, kern: 0.88)
+        wordsTitle.frame.origin = NSPoint(x: Self.padding, y: y + 12)
+        addSubview(wordsTitle)
+        let wordsCaption = themedLabel("Names the rewrite should spell correctly, one per line",
+                                       font: Theme.caption, color: Theme.textMuted)
+        wordsCaption.frame.origin = NSPoint(x: Self.padding, y: wordsTitle.frame.maxY + 2)
+        addSubview(wordsCaption)
+
+        let field = NSRect(x: Self.padding, y: wordsCaption.frame.maxY + 8, width: width - Self.padding * 2, height: 112)
+        addSubview(wordsEditor(frame: field, words: settings.vocabulary))
+        frame.size = NSSize(width: width, height: field.maxY + Self.padding)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    func textDidChange(_ notification: Notification) {
+        guard let text = (notification.object as? NSTextView)?.string else { return }
+        let words = text.split(whereSeparator: { $0 == "\n" || $0 == "," })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        store.update { $0.vocabulary = words }
+    }
+
+    private func update(_ change: (inout Settings) -> Void) {
+        store.update(change)
+        onChange()
+    }
+
+    private func keyRow(at y: CGFloat, width: CGFloat, title: String, caption: String, value: String,
+                        choices: [(String, Bool, () -> Void)]) -> CGFloat
+    {
+        let height: CGFloat = 52
+        let name = themedLabel(title, font: Theme.label, color: Theme.textMuted, kern: 0.88)
+        name.frame.origin = NSPoint(x: Self.padding, y: y + 10)
+        addSubview(name)
+        let chip = MenuChip(title: value, choices: choices)
+        chip.frame.origin = NSPoint(x: width - Self.padding - chip.frame.width, y: y + (height - chip.frame.height) / 2)
+        addSubview(chip)
+
+        let note = themedLabel(caption, font: Theme.caption, color: Theme.textMuted)
+        note.lineBreakMode = .byTruncatingTail
+        note.frame.origin = NSPoint(x: Self.padding, y: name.frame.maxY + 2)
+        note.frame.size.width = min(note.frame.width, chip.frame.minX - 12 - Self.padding)
+        addSubview(note)
+        return y + height
+    }
+
+    private func divider(at y: CGFloat, width: CGFloat, inset: CGFloat) -> CGFloat {
+        let line = NSView(frame: NSRect(x: inset, y: y, width: width - inset * 2, height: 1))
+        line.wantsLayer = true
+        line.layer?.backgroundColor = (inset == 0 ? Theme.border : Theme.borderSoft).cgColor
+        addSubview(line)
+        return y + 1
+    }
+
+    /// The scroll view does not draw a layer border, so a plain bordered box holds it.
+    private func wordsEditor(frame: NSRect, words: [String]) -> NSView {
+        let box = NSView(frame: frame)
+        box.wantsLayer = true
+        box.layer?.borderColor = Theme.border.cgColor
+        box.layer?.borderWidth = 1
+        box.layer?.cornerRadius = 4
+
+        let scroll = NSScrollView(frame: box.bounds.insetBy(dx: 1, dy: 1))
+        scroll.hasVerticalScroller = true
+        scroll.scrollerStyle = .overlay
+        scroll.drawsBackground = false
+        box.addSubview(scroll)
+
+        let text = NSTextView(frame: NSRect(origin: .zero, size: scroll.contentSize))
+        text.string = words.joined(separator: "\n")
+        text.font = Theme.body
+        text.textColor = Theme.text
+        text.backgroundColor = .clear
+        text.drawsBackground = false
+        text.insertionPointColor = Theme.accent
+        text.selectedTextAttributes = [.backgroundColor: Theme.selection, .foregroundColor: Theme.text]
+        text.textContainerInset = NSSize(width: 6, height: 6)
+        text.isRichText = false
+        text.allowsUndo = true
+        text.isAutomaticSpellingCorrectionEnabled = false
+        text.isAutomaticTextReplacementEnabled = false
+        text.autoresizingMask = [.width]
+        text.setAccessibilityLabel("Rewrite words, one per line")
+        text.delegate = self
+        scroll.documentView = text
+        return box
+    }
+}
+
+/// A bordered value chip that opens a menu of choices, the current one checked.
+final class MenuChip: NSView {
+    private let choices: [(String, Bool, () -> Void)]
+
+    override var isFlipped: Bool { true }
+
+    init(title: String, choices: [(String, Bool, () -> Void)]) {
+        self.choices = choices
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.borderColor = Theme.border.cgColor
+        layer?.borderWidth = 1
+        layer?.cornerRadius = 4
+        setAccessibilityRole(.popUpButton)
+        setAccessibilityValue(title)
+
+        let text = themedLabel(title, font: Theme.body, color: Theme.textSecondary)
+        let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)!)
+        chevron.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+        chevron.contentTintColor = Theme.iconMuted
+        chevron.frame.size = NSSize(width: 10, height: 10)
+
+        let height: CGFloat = 26
+        text.frame.origin = NSPoint(x: 10, y: (height - text.frame.height) / 2)
+        chevron.frame.origin = NSPoint(x: text.frame.maxX + 8, y: (height - 10) / 2)
+        addSubview(text)
+        addSubview(chevron)
+        frame.size = NSSize(width: chevron.frame.maxX + 10, height: height)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { showMenu() }
+    override func accessibilityPerformPress() -> Bool {
+        showMenu()
+        return true
+    }
+
+    private func showMenu() {
+        let menu = NSMenu()
+        for (title, selected, choose) in choices {
+            let item = ClosureMenuItem(title: title, onSelect: choose)
+            item.state = selected ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: frame.height + 4), in: self)
+    }
+}
+
+final class ClosureMenuItem: NSMenuItem {
+    private let onSelect: () -> Void
+
+    init(title: String, onSelect: @escaping () -> Void) {
+        self.onSelect = onSelect
+        super.init(title: title, action: #selector(selected), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc private func selected() { onSelect() }
+}
+
+/// An uppercase text-only button in the muted label style.
+func textButton(_ title: String, action: @escaping () -> Void) -> NSButton {
+    let button = ClosureButton(title: "", target: nil, action: nil)
+    button.onClick = action
+    button.isBordered = false
+    button.attributedTitle = NSAttributedString(string: title, attributes: [
+        .font: Theme.label, .foregroundColor: Theme.textSecondary, .kern: 0.88,
+    ])
+    button.sizeToFit()
+    return button
+}

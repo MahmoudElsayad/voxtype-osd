@@ -1,0 +1,7 @@
+#!/bin/sh
+# Voxtype post-process command. Voxtype pipes each transcription in and types what comes out.
+# When the VoxtypeOSD rewrite switch is off, the text passes through without starting Python.
+if [ -e "$HOME/Library/Application Support/VoxtypeOSD/rewrite-enabled" ]; then
+  exec /usr/bin/python3 -I "$(dirname "$0")/rewrite.py"
+fi
+exec cat
