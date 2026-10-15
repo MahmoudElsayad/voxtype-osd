@@ -1,16 +1,20 @@
 import AppKit
 
-/// The Settings page of the menu bar panel: the three keys and the rewrite word list.
+/// The Settings page of the menu bar panel: the three keys, and the rewrite model, effort and words.
 /// Every change is saved at once; the panel redraws after a key change.
 final class SettingsCard: NSView, NSTextViewDelegate {
     private static let padding: CGFloat = 16
     private let store: SettingsStore
+    private let catalog: ModelCatalog
     private let onChange: () -> Void
 
     override var isFlipped: Bool { true }
 
-    init(store: SettingsStore, width: CGFloat, onDone: @escaping () -> Void, onChange: @escaping () -> Void) {
+    init(store: SettingsStore, catalog: ModelCatalog, width: CGFloat,
+         onDone: @escaping () -> Void, onChange: @escaping () -> Void)
+    {
         self.store = store
+        self.catalog = catalog
         self.onChange = onChange
         super.init(frame: .zero)
         styleAsCard(self)
@@ -47,6 +51,41 @@ final class SettingsCard: NSView, NSTextViewDelegate {
                    })
         y = divider(at: y, width: width, inset: 0)
 
+        y = keyRow(at: y, width: width, title: "REWRITE PROVIDER", caption: "Choose the login to use",
+                   value: settings.rewriteProvider.title,
+                   choices: RewriteProvider.allCases.map { provider in
+                       (provider.title, provider == settings.rewriteProvider, { [weak self] in
+                           self?.update { settings in
+                               guard settings.rewriteProvider != provider else { return }
+                               settings.rewriteProvider = provider
+                               settings.rewriteModel = catalog.models(for: provider).first?.slug ?? ""
+                               settings.rewriteEffort = nil
+                           }
+                       })
+                   })
+        y = divider(at: y, width: width, inset: Self.padding)
+
+        // A model missing from the catalog, for example after it was retired, still shows by name.
+        let model = catalog.model(settings.rewriteModel, provider: settings.rewriteProvider)
+        y = keyRow(at: y, width: width, title: "REWRITE MODEL", caption: settings.rewriteProvider == .claude ? "Uses your Claude Code login" : catalog.codexStatus,
+                   value: model?.name ?? (settings.rewriteModel.isEmpty ? "Default" : settings.rewriteModel),
+                   choices: catalog.models(for: settings.rewriteProvider).map { choice in (choice.name, choice.slug == settings.rewriteModel, { [weak self] in
+                       self?.update { settings in
+                           settings.rewriteModel = choice.slug
+                           if let effort = settings.rewriteEffort, !choice.efforts.contains(effort) { settings.rewriteEffort = nil }
+                       }
+                   }) })
+        y = divider(at: y, width: width, inset: Self.padding)
+        let defaultTitle = "Default" + (model?.defaultEffort.map { " (\(Self.effortTitle($0)))" } ?? "")
+        let efforts = model?.efforts ?? (settings.rewriteProvider == .claude ? ModelCatalog.cliEfforts : [])
+        y = keyRow(at: y, width: width, title: "REWRITE EFFORT", caption: "Higher can be slower",
+                   value: settings.rewriteEffort.map(Self.effortTitle) ?? defaultTitle,
+                   choices: [(defaultTitle, settings.rewriteEffort == nil, { [weak self] in self?.update { $0.rewriteEffort = nil } })]
+                       + efforts.map { effort in (Self.effortTitle(effort), effort == settings.rewriteEffort, { [weak self] in
+                           self?.update { $0.rewriteEffort = effort }
+                       }) })
+        y = divider(at: y, width: width, inset: Self.padding)
+
         let wordsTitle = themedLabel("REWRITE WORDS", font: Theme.label, color: Theme.textMuted, kern: 0.88)
         wordsTitle.frame.origin = NSPoint(x: Self.padding, y: y + 12)
         addSubview(wordsTitle)
@@ -55,7 +94,7 @@ final class SettingsCard: NSView, NSTextViewDelegate {
         wordsCaption.frame.origin = NSPoint(x: Self.padding, y: wordsTitle.frame.maxY + 2)
         addSubview(wordsCaption)
 
-        let field = NSRect(x: Self.padding, y: wordsCaption.frame.maxY + 8, width: width - Self.padding * 2, height: 112)
+        let field = NSRect(x: Self.padding, y: wordsCaption.frame.maxY + 8, width: width - Self.padding * 2, height: 96)
         addSubview(wordsEditor(frame: field, words: settings.vocabulary))
         frame.size = NSSize(width: width, height: field.maxY + Self.padding)
     }
@@ -70,6 +109,10 @@ final class SettingsCard: NSView, NSTextViewDelegate {
         store.update { $0.vocabulary = words }
     }
 
+    private static func effortTitle(_ effort: String) -> String {
+        ["none": "None", "minimal": "Minimal", "ultra": "Ultra", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra High", "max": "Max"][effort] ?? effort
+    }
+
     private func update(_ change: (inout Settings) -> Void) {
         store.update(change)
         onChange()
@@ -82,14 +125,15 @@ final class SettingsCard: NSView, NSTextViewDelegate {
         let name = themedLabel(title, font: Theme.label, color: Theme.textMuted, kern: 0.88)
         name.frame.origin = NSPoint(x: Self.padding, y: y + 10)
         addSubview(name)
-        let chip = MenuChip(title: value, choices: choices)
-        chip.frame.origin = NSPoint(x: width - Self.padding - chip.frame.width, y: y + (height - chip.frame.height) / 2)
+        let chip = MenuChip(title: value, choices: choices, maxWidth: width - Self.padding * 2 - name.frame.width - 12)
+        chip.setAccessibilityLabel("\(title): \(value)")
+        chip.frame.origin = NSPoint(x: width - Self.padding - chip.frame.width, y: y + 4)
         addSubview(chip)
 
         let note = themedLabel(caption, font: Theme.caption, color: Theme.textMuted)
         note.lineBreakMode = .byTruncatingTail
-        note.frame.origin = NSPoint(x: Self.padding, y: name.frame.maxY + 2)
-        note.frame.size.width = min(note.frame.width, chip.frame.minX - 12 - Self.padding)
+        note.frame.origin = NSPoint(x: Self.padding, y: y + 33)
+        note.frame.size.width = max(0, min(note.frame.width, width - Self.padding * 2))
         addSubview(note)
         return y + height
     }
@@ -143,7 +187,7 @@ final class MenuChip: NSView {
 
     override var isFlipped: Bool { true }
 
-    init(title: String, choices: [(String, Bool, () -> Void)]) {
+    init(title: String, choices: [(String, Bool, () -> Void)], maxWidth: CGFloat = 220) {
         self.choices = choices
         super.init(frame: .zero)
         wantsLayer = true
@@ -154,6 +198,9 @@ final class MenuChip: NSView {
         setAccessibilityValue(title)
 
         let text = themedLabel(title, font: Theme.body, color: Theme.textSecondary)
+        text.lineBreakMode = .byTruncatingTail
+        text.maximumNumberOfLines = 1
+        text.frame.size.width = max(12, min(text.frame.width, maxWidth - 38))
         let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)!)
         chevron.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
         chevron.contentTintColor = Theme.iconMuted
@@ -176,14 +223,18 @@ final class MenuChip: NSView {
         return true
     }
 
-    private func showMenu() {
+    func makeMenu() -> NSMenu {
         let menu = NSMenu()
         for (title, selected, choose) in choices {
             let item = ClosureMenuItem(title: title, onSelect: choose)
             item.state = selected ? .on : .off
             menu.addItem(item)
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: frame.height + 4), in: self)
+        return menu
+    }
+
+    private func showMenu() {
+        makeMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: frame.height + 4), in: self)
     }
 }
 

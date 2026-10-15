@@ -27,7 +27,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 PLIST
 
 mkdir -p "$app/Contents/Resources"
-cp rewrite/voxtype-rewrite rewrite/rewrite.py "$app/Contents/Resources/"
+cp rewrite/voxtype-rewrite rewrite/rewrite.py rewrite/codex_models.py "$app/Contents/Resources/"
 
 # A certificate keeps the Accessibility permission across rebuilds. An ad-hoc signature
 # changes with every build, and macOS then drops the permission until it is granted again.

@@ -11,6 +11,7 @@ final class HistoryPanel: NSObject {
     private let history: History
     private let rewrite: RewriteSwitch
     private let settings: SettingsStore
+    private let catalog = ModelCatalog()
     private var showingSettings = false
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let panel = KeyPanel(
@@ -49,7 +50,7 @@ final class HistoryPanel: NSObject {
         if panel.isVisible, !showingSettings { render() }
     }
 
-    /// A waveform, or a wand while the Claude rewrite is on.
+    /// A waveform, or a wand while the rewrite is on.
     private func updateIcon() {
         let name = rewrite.isOn ? "wand.and.sparkles" : "waveform"
         let description = rewrite.isOn ? "Voxtype history, rewrite on" : "Voxtype history"
@@ -70,7 +71,7 @@ final class HistoryPanel: NSObject {
 
     private func showMenu() {
         let menu = NSMenu()
-        let toggle = menu.addItem(withTitle: "Rewrite with Claude", action: #selector(toggleRewrite), keyEquivalent: "")
+        let toggle = menu.addItem(withTitle: "Rewrite transcription", action: #selector(toggleRewrite), keyEquivalent: "")
         toggle.target = self
         toggle.state = rewrite.isOn ? .on : .off
         menu.addItem(.separator())
@@ -119,7 +120,7 @@ final class HistoryPanel: NSObject {
     private func render() {
         let card: NSView = showingSettings
             ? SettingsCard(
-                store: settings, width: Self.width,
+                store: settings, catalog: catalog, width: Self.width,
                 onDone: { [weak self] in self?.showSettings(false) },
                 onChange: { [weak self] in self?.render() })
             : HistoryCard(
@@ -138,6 +139,21 @@ final class HistoryPanel: NSObject {
     private func showSettings(_ show: Bool) {
         showingSettings = show
         render()
+        if show {
+            catalog.refreshCodexIfStale { [weak self] in
+                guard let self else { return }
+                // First successful discovery supplies a default only for an unchosen Codex model.
+                if self.settings.settings.rewriteProvider == .codex,
+                   self.settings.settings.rewriteModel.isEmpty,
+                   let model = self.catalog.codexModels.first {
+                    self.settings.update { $0.rewriteModel = model.slug; $0.rewriteEffort = nil }
+                }
+                if self.showingSettings { self.render() }
+            }
+            catalog.refreshIfStale { [weak self] in
+                if self?.showingSettings == true { self?.render() }
+            }
+        }
     }
 
     private func copy(_ text: String, from row: HistoryRow) {
@@ -370,9 +386,9 @@ final class RewriteToggle: NSView {
         self.onToggle = onToggle
         super.init(frame: .zero)
         setAccessibilityRole(.checkBox)
-        setAccessibilityLabel("Rewrite with Claude")
+        setAccessibilityLabel("Rewrite transcription")
         setAccessibilityValue(isOn)
-        toolTip = "Rewrite each transcription with Claude before it is typed"
+        toolTip = "Rewrite each transcription with the selected provider before it is typed"
 
         let name = themedLabel("REWRITE", font: Theme.label, color: Theme.textMuted, kern: 0.88)
         let state = themedLabel(isOn ? "ON" : "OFF", font: Theme.label,

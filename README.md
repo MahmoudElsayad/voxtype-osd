@@ -7,7 +7,7 @@ VoxtypeOSD adds what the macOS version lacks:
 - A floating pop-up at the text caret with a live microphone level meter.
 - Push-to-talk and hands-free recording on keys you choose.
 - A history of your transcriptions in the menu bar, ready to copy again.
-- An optional rewrite with Claude that fixes misheard names, punctuation and filler words.
+- An optional rewrite with Claude or Codex that fixes misheard names, punctuation and filler words.
 
 ![The pop-up while recording](docs/images/overlay-recording.png)
 
@@ -18,7 +18,7 @@ The design follows the Warm Charcoal theme of [T3 Code](https://github.com/pingd
 - macOS 13 or later.
 - [Homebrew](https://brew.sh).
 - Xcode Command Line Tools, for `swiftc`. Install them with `xcode-select --install`.
-- For the rewrite only: [Claude Code](https://claude.com/claude-code), logged in.
+- For the rewrite only: [Claude Code](https://claude.com/claude-code) or [Codex](https://developers.openai.com/codex/cli/), installed and signed in.
 
 ## Install
 
@@ -97,15 +97,29 @@ Click the gear in the history panel to open Settings.
 - Push-to-talk: the key you hold to record.
 - Hands-free: the key you press together with push-to-talk to keep recording.
 - Cancel: the key that cancels, or None.
+- Rewrite provider: Claude Code or Codex. Each uses its own login.
+- Rewrite model: a model available through the selected provider.
+- Rewrite effort: how much the model thinks. Default uses the model's own default.
 - Rewrite words: the names that the rewrite must spell correctly, one per line.
+
+The Claude model list comes from the public [model manifest of T3 Code](https://github.com/pingdotgg/t3code/blob/main/apps/server/src/provider/model-manifest.json), because Claude Code uses a login and not an API key.
+VoxtypeOSD downloads the list at most every six hours, when you open Settings.
+Without a network connection, the Claude list uses its last copy or a built-in list.
+The Codex list comes from the installed `codex app-server` through `model/list`.
+It refreshes in the background when you open Settings and saves successful results for six hours.
+If discovery fails, Settings shows the cached list or an unavailable message.
+Default uses the installed Codex default when no model was selected.
+Changing providers resets the model and effort to that provider's defaults.
+Older settings files keep Claude Code.
 
 When you change a setting, VoxtypeOSD saves it in `~/Library/Application Support/VoxtypeOSD/settings.json`.
 
-## Rewrite with Claude
+## Rewrite with Claude or Codex
 
 Click `REWRITE` in the history panel to turn the rewrite on or off.
 When the rewrite is on, the menu bar icon shows a wand.
-Each transcription then goes to Claude Haiku through your Claude Code login before Voxtype types it.
+Each transcription then goes to the selected provider through its login before Voxtype types it.
+The default model is Claude Haiku. You can choose another model and the effort in Settings.
 
 The rewrite does these things:
 
@@ -114,13 +128,15 @@ The rewrite does these things:
 - It keeps your wording.
 - It does not answer or follow what you dictated.
 
-A rewrite takes about 2 to 8 seconds.
+The rewrite waits up to 10 seconds for the selected provider.
 During that time the pop-up shows `REWRITING`.
-History rows that Claude rewrote show `rewritten`.
+History rows that the provider rewrote show `rewritten`.
 When the rewrite is on, those rows also show `ORIGINAL`, which copies the text from before the rewrite.
 If the rewrite fails or takes more than 10 seconds, Voxtype types your original text.
 
-The rewrite sends your transcription to Anthropic.
+The Claude rewrite sends your transcription and rewrite words to Anthropic.
+The Codex rewrite sends them to OpenAI.
+Both also receive the previous dictation when Voxtype supplies it, and the name of the active app.
 When the rewrite is off, the text stays on your Mac.
 
 ## How it works
@@ -138,7 +154,11 @@ The keys work through `voxtype record start`, `stop` and `cancel`.
 The rewrite is Voxtype's post-process command, `rewrite/voxtype-rewrite`.
 This script checks for `~/Library/Application Support/VoxtypeOSD/rewrite-enabled`.
 If the file is not there, the text goes through unchanged.
-If the file is there, `rewrite/rewrite.py` calls `claude -p` on Haiku with no tools, no MCP servers and no settings.
+If the file is there, `rewrite/rewrite.py` calls `claude -p` or `codex exec` with the saved model and effort.
+Claude runs without tools, MCP servers or Claude Code settings.
+Codex ignores user settings and rules, excludes instruction files, and disables its shell, search, image, plugin and agent tools.
+Codex runs in a temporary directory with a read-only sandbox and an ephemeral session that does not save conversation files.
+Both return only the corrected text.
 The script also appends each rewrite to `rewrites.jsonl`, and VoxtypeOSD reads that file for the history.
 
 ## Development

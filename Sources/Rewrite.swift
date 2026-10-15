@@ -1,6 +1,6 @@
 import Foundation
 
-/// The on/off switch for the Claude rewrite. `rewrite/voxtype-rewrite` checks for the same file.
+/// The on/off switch for the rewrite. `rewrite/voxtype-rewrite` checks for the same file.
 final class RewriteSwitch {
     private let flag: String
 
