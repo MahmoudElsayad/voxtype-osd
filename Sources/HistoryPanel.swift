@@ -13,6 +13,8 @@ final class HistoryPanel: NSObject {
     private let settings: SettingsStore
     private let catalog = ModelCatalog()
     private var showingSettings = false
+    private let audioInput = AudioInputController()
+    private var inputTimer: Timer?
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let panel = KeyPanel(
         contentRect: NSRect(x: 0, y: 0, width: HistoryPanel.width, height: 120),
@@ -104,6 +106,8 @@ final class HistoryPanel: NSObject {
         guard panel.isVisible else { return }
         panel.orderOut(nil)
         showingSettings = false
+        inputTimer?.invalidate()
+        inputTimer = nil
         if let monitor = outsideClickMonitor { NSEvent.removeMonitor(monitor) }
         outsideClickMonitor = nil
     }
@@ -120,7 +124,7 @@ final class HistoryPanel: NSObject {
     private func render() {
         let card: NSView = showingSettings
             ? SettingsCard(
-                store: settings, catalog: catalog, width: Self.width,
+                store: settings, catalog: catalog, width: Self.width, audioInput: audioInput,
                 onDone: { [weak self] in self?.showSettings(false) },
                 onChange: { [weak self] in self?.render() })
             : HistoryCard(
@@ -138,6 +142,15 @@ final class HistoryPanel: NSObject {
 
     private func showSettings(_ show: Bool) {
         showingSettings = show
+        inputTimer?.invalidate()
+        inputTimer = nil
+        if show {
+            audioInput.refresh()
+            audioInput.loadRecordingInput()
+            inputTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                self?.audioInput.refresh()
+            }
+        }
         render()
         if show {
             catalog.refreshCodexIfStale { [weak self] in

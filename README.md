@@ -93,8 +93,9 @@ If the helper or player is unavailable, dictation continues without playback con
 
 A Bluetooth headset microphone can reduce playback quality while it records.
 Pausing music does not change that Bluetooth behavior.
-Select the built-in microphone in System Settings > Sound > Input to keep the headset available for higher-quality playback.
-VoxtypeOSD does not change your audio devices.
+Select the built-in microphone in Settings > Microphone to keep the headset available for higher-quality playback.
+This changes the macOS input for other apps too.
+Voxtype uses the selected microphone for the next recording.
 
 ## History
 
@@ -115,6 +116,10 @@ Click the gear in the history panel to open Settings.
 
 ![Settings](docs/images/settings.png)
 
+- Microphone: the current macOS input, with a menu of connected microphones.
+  A change applies to the next recording and changes the macOS input for other apps too.
+  The menu stays disabled during recording.
+  If Voxtype uses a device override, Settings shows that override and disables the menu.
 - Push-to-talk: the key you hold to record.
 - Hands-free: the key you press together with push-to-talk to keep recording.
 - Cancel: the key that cancels, or None.

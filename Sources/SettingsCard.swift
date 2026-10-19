@@ -1,6 +1,6 @@
 import AppKit
 
-/// The Settings page of the menu bar panel: the three keys, and the rewrite model, effort and words.
+/// The Settings page of the menu bar panel.
 /// Every change is saved at once; the panel redraws after a key change.
 final class SettingsCard: NSView, NSTextViewDelegate {
     private static let padding: CGFloat = 16
@@ -10,7 +10,7 @@ final class SettingsCard: NSView, NSTextViewDelegate {
 
     override var isFlipped: Bool { true }
 
-    init(store: SettingsStore, catalog: ModelCatalog, width: CGFloat,
+    init(store: SettingsStore, catalog: ModelCatalog, width: CGFloat, audioInput: AudioInputController? = nil,
          onDone: @escaping () -> Void, onChange: @escaping () -> Void)
     {
         self.store = store
@@ -28,6 +28,13 @@ final class SettingsCard: NSView, NSTextViewDelegate {
         done.frame.origin = NSPoint(x: width - Self.padding - done.frame.width, y: (headerHeight - done.frame.height) / 2)
         addSubview(done)
         var y = divider(at: headerHeight, width: width, inset: 0)
+
+        if let audioInput {
+            let row = AudioInputRow(controller: audioInput, width: width)
+            row.frame.origin.y = y
+            addSubview(row)
+            y = divider(at: row.frame.maxY, width: width, inset: 0)
+        }
 
         y = keyRow(at: y, width: width, title: "PUSH-TO-TALK", caption: "Hold to talk",
                    value: settings.pushToTalk.title,
@@ -184,6 +191,7 @@ final class SettingsCard: NSView, NSTextViewDelegate {
 /// A bordered value chip that opens a menu of choices, the current one checked.
 final class MenuChip: NSView {
     private let choices: [(String, Bool, () -> Void)]
+    var isEnabled = true { didSet { setAccessibilityEnabled(isEnabled); alphaValue = isEnabled ? 1 : 0.65 } }
 
     override var isFlipped: Bool { true }
 
@@ -196,6 +204,7 @@ final class MenuChip: NSView {
         layer?.cornerRadius = 4
         setAccessibilityRole(.popUpButton)
         setAccessibilityValue(title)
+        toolTip = title
 
         let text = themedLabel(title, font: Theme.body, color: Theme.textSecondary)
         text.lineBreakMode = .byTruncatingTail
@@ -219,21 +228,25 @@ final class MenuChip: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) { showMenu() }
     override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
         showMenu()
         return true
     }
 
     func makeMenu() -> NSMenu {
         let menu = NSMenu()
+        menu.autoenablesItems = false
         for (title, selected, choose) in choices {
             let item = ClosureMenuItem(title: title, onSelect: choose)
             item.state = selected ? .on : .off
+            item.isEnabled = isEnabled
             menu.addItem(item)
         }
         return menu
     }
 
     private func showMenu() {
+        guard isEnabled else { return }
         makeMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: frame.height + 4), in: self)
     }
 }
@@ -262,4 +275,50 @@ func textButton(_ title: String, action: @escaping () -> Void) -> NSButton {
     ])
     button.sizeToFit()
     return button
+}
+
+/// Only this row changes when a microphone connects or macOS selects another input.
+final class AudioInputRow: NSView {
+    private let controller: AudioInputController
+    private struct State: Equatable {
+        let title: String
+        let caption: String
+        let enabled: Bool
+        let snapshot: AudioInputSnapshot
+    }
+    private var lastState: State?
+    override var isFlipped: Bool { true }
+
+    init(controller: AudioInputController, width: CGFloat) {
+        self.controller = controller
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 96))
+        controller.onChange = { [weak self] in self?.render() }
+        render()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private func render() {
+        let state = State(title: controller.title, caption: controller.caption,
+                          enabled: controller.canSelect, snapshot: controller.snapshot)
+        guard state != lastState else { return }
+        lastState = state
+        subviews.forEach { $0.removeFromSuperview() }
+        let name = themedLabel("MICROPHONE", font: Theme.label, color: Theme.textMuted, kern: 0.88)
+        name.frame.origin = NSPoint(x: 16, y: 10)
+        addSubview(name)
+        let chip = MenuChip(title: state.title, choices: state.snapshot.devices.map { device in
+            (device.name, device.id == state.snapshot.defaultID, { [weak controller] in controller?.select(device.id) })
+        }, maxWidth: bounds.width - 32)
+        chip.isEnabled = state.enabled
+        chip.setAccessibilityLabel("Microphone: \(state.title)")
+        chip.frame.origin = NSPoint(x: 16, y: 28)
+        addSubview(chip)
+        let note = NSTextField(wrappingLabelWithString: state.caption)
+        note.font = Theme.caption
+        note.textColor = controller.error == nil ? Theme.textMuted : Theme.errorText
+        note.frame = NSRect(x: 16, y: 62, width: bounds.width - 32, height: 30)
+        note.toolTip = state.caption
+        addSubview(note)
+    }
 }

@@ -257,6 +257,80 @@ func testRecordingMedia() throws {
 }
 try testRecordingMedia()
 
+func testAudioInput() {
+    let beats = AudioInputDevice(id: 21, name: "Mahmoud Powerbeats Pro")
+    let external = AudioInputDevice(id: 22, name: "External USB Microphone with a long device name")
+    var current = AudioInputSnapshot(devices: [beats, external], defaultID: beats.id)
+    var recording = false
+    var failRead = false
+    var failSelection = false
+    var selections: [UInt32] = []
+    let controller = AudioInputController(read: {
+        if failRead { throw AudioInputError.operationFailed }
+        return current
+    }, setDefault: { id in
+        selections.append(id)
+        if failSelection { throw AudioInputError.operationFailed }
+        current = AudioInputSnapshot(devices: current.devices, defaultID: id)
+    }, recordingDeviceName: { beats.name }, isRecording: { recording })
+    controller.setRecordingInput(.systemDefault)
+    controller.refresh()
+    let row = AudioInputRow(controller: controller, width: 360)
+    func chip() -> MenuChip { row.subviews.compactMap { $0 as? MenuChip }.first! }
+    func select(_ name: String) {
+        let menu = chip().makeMenu()
+        menu.performActionForItem(at: menu.items.firstIndex { $0.title == name }!)
+    }
+    precondition(controller.title == beats.name && chip().isEnabled)
+    select(external.name)
+    precondition(selections == [external.id] && controller.title == external.name)
+    precondition(chip().toolTip == external.name, "Long device names remain accessible in full")
+    failSelection = true
+    select(beats.name)
+    precondition(controller.title == external.name && controller.error != nil,
+                 "A failed selection keeps the real default and shows an error")
+    controller.refresh()
+    precondition(controller.error != nil, "Polling must not hide a selection failure")
+    failSelection = false
+    select(beats.name)
+    precondition(controller.error == nil)
+    recording = true
+    current = AudioInputSnapshot(devices: [beats, external], defaultID: external.id)
+    controller.refresh()
+    precondition(controller.title == beats.name && !chip().isEnabled,
+                 "An active stream keeps its logged device after an external default change")
+    let count = selections.count
+    select(external.name)
+    controller.select(external.id)
+    precondition(selections.count == count && !chip().accessibilityPerformPress())
+    recording = false
+    controller.refresh()
+    precondition(controller.title == external.name && chip().isEnabled)
+    current = AudioInputSnapshot(devices: [], defaultID: 0)
+    controller.refresh()
+    precondition(controller.title == "No input available" && !chip().isEnabled)
+    current = AudioInputSnapshot(devices: [beats], defaultID: beats.id)
+    failRead = true
+    controller.refresh()
+    precondition(controller.error != nil)
+    failRead = false
+    controller.refresh()
+    precondition(controller.error == nil && controller.title == beats.name)
+    controller.setRecordingInput(.configured("Fixed mic"))
+    precondition(controller.title == "Fixed mic" && !chip().isEnabled)
+    controller.setRecordingInput(.unavailable)
+    precondition(!chip().isEnabled)
+    precondition(RecordingInput.parse("[audio]\n  device = \"default\"\n[audio.feedback]\n  enabled = true") == .systemDefault)
+    precondition(RecordingInput.parse("[audio]\n  device = \"USB Mic\"") == .configured("USB Mic"))
+    precondition(RecordingInput.parse("[meeting.audio]\n  device = \"default\"") == .unavailable)
+    let log = "Recording started (external trigger)\nUsing audio device: Old mic\nRecording stopped\nRecording started (external trigger)\nUsing audio device: Powerbeats Pro\n"
+    precondition(AudioInputController.recordingDevice(in: log) == "Powerbeats Pro")
+    precondition(AudioInputController.recordingDevice(in: log + "Recording stopped\n") == nil)
+    precondition(AudioInputController.recordingDevice(in: log + "Recording started (external trigger)\n") == nil)
+    print("Microphone menus, real selection state, failures, active streams, device changes, config parsing, and log identity passed")
+}
+testAudioInput()
+
 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("voxtype-test-" + UUID().uuidString)
 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 defer { try? FileManager.default.removeItem(at: directory) }
@@ -272,8 +346,14 @@ let store = SettingsStore(directory: directory)
 let catalog = ModelCatalog(directory: directory)
 precondition(catalog.codexModels.count == 1)
 store.update { $0.rewriteEffort = "high" }
+let audioInput = AudioInputController(read: {
+    AudioInputSnapshot(devices: [AudioInputDevice(id: 21, name: "Mahmoud Powerbeats Pro"),
+                                AudioInputDevice(id: 22, name: "External USB Microphone")], defaultID: 21)
+}, setDefault: { _ in }, isRecording: { false })
+audioInput.setRecordingInput(.systemDefault)
+audioInput.refresh()
 func card() -> SettingsCard {
-    SettingsCard(store: store, catalog: catalog, width: 360, onDone: {}, onChange: {})
+    SettingsCard(store: store, catalog: catalog, width: 360, audioInput: audioInput, onDone: {}, onChange: {})
 }
 func choose(_ card: SettingsCard, label: String, title: String) {
     let chip = card.subviews.compactMap { $0 as? MenuChip }.first { $0.accessibilityLabel()?.hasPrefix(label) == true }!
