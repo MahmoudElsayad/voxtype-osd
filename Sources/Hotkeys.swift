@@ -172,29 +172,3 @@ final class Hotkeys {
         }
     }
 }
-
-/// Runs `voxtype record <command>` in order, off the main thread.
-final class VoxtypeCommand {
-    /// Homebrew installs to /opt/homebrew on Apple silicon and /usr/local on Intel Macs.
-    private static let executable = ["/opt/homebrew/bin/voxtype", "/usr/local/bin/voxtype"]
-        .map(URL.init(fileURLWithPath:))
-        .first { FileManager.default.isExecutableFile(atPath: $0.path) }
-        ?? URL(fileURLWithPath: "/opt/homebrew/bin/voxtype")
-    private let queue = DispatchQueue(label: "voxtype-osd.record")
-
-    func run(_ command: String) {
-        queue.async {
-            let process = Process()
-            process.executableURL = Self.executable
-            process.arguments = ["record", command]
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            do {
-                try process.run()
-                process.waitUntilExit()
-            } catch {
-                NSLog("VoxtypeOSD: voxtype record \(command) failed: \(error)")
-            }
-        }
-    }
-}

@@ -109,6 +109,45 @@ func testRecordingCancellation() {
 }
 testRecordingCancellation()
 
+func testVoxtypeCommandRestoresLockFile() throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("voxtype-lock-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let lockFile = directory.appendingPathComponent("voxtype.lock").path
+    let notRunning = VoxtypeCommand.Outcome(status: 1, stderr: "Error: Voxtype daemon is not running.\n")
+
+    // The daemon runs but its lock file is gone: the PID is written back and the command retried.
+    var calls: [[String]] = []
+    var command = VoxtypeCommand(execute: { arguments in
+        calls.append(arguments)
+        let restored = FileManager.default.fileExists(atPath: lockFile)
+        return restored ? VoxtypeCommand.Outcome(status: 0, stderr: "") : notRunning
+    }, daemonPIDs: { [1012] }, lockFile: lockFile)
+    precondition(command.runNow("start"))
+    precondition(calls == [["record", "start"], ["record", "start"]])
+    let written = try String(contentsOfFile: lockFile, encoding: .utf8)
+    precondition(written == "1012")
+
+    // No daemon, or several: nothing is written and the command is not retried.
+    for pids: [Int32] in [[], [1012, 2024]] {
+        try? FileManager.default.removeItem(atPath: lockFile)
+        calls = []
+        command = VoxtypeCommand(execute: { calls.append($0); return notRunning },
+                                 daemonPIDs: { pids }, lockFile: lockFile)
+        precondition(!command.runNow("stop"))
+        precondition(calls.count == 1 && !FileManager.default.fileExists(atPath: lockFile))
+    }
+
+    // Other failures leave the lock file alone.
+    calls = []
+    command = VoxtypeCommand(execute: { calls.append($0); return .init(status: 1, stderr: "Error: other") },
+                             daemonPIDs: { [1012] }, lockFile: lockFile)
+    precondition(!command.runNow("cancel"))
+    precondition(calls.count == 1 && !FileManager.default.fileExists(atPath: lockFile))
+    print("Voxtype lock file restoration passed")
+}
+try testVoxtypeCommandRestoresLockFile()
+
 func testRecordingMedia() throws {
     func item(playing: Bool = true, pid: Int = 42, id: String = "song-1") -> MediaSnapshot {
         let json = "{\"playing\":\(playing),\"processIdentifier\":\(pid),\"bundleIdentifier\":\"test.browser\",\"contentItemIdentifier\":\"\(id)\"}"
